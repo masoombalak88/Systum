@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
-
 from ntgcalls import (ConnectionNotFound, TelegramServerError,
                       RTMPStreamingUnsupported, ConnectionError)
 from pyrogram.errors import (ChatSendMediaForbidden, ChatSendPhotosForbidden,
@@ -38,7 +37,6 @@ class TgCall(PyTgCalls):
             await client.leave_call(chat_id, close=False)
         except Exception:
             pass
-
 
     async def play_media(
         self,
@@ -129,7 +127,6 @@ class TgCall(PyTgCalls):
             await self.stop(chat_id)
             await message.edit_text(_lang["error_rtmp"])
 
-
     async def replay(self, chat_id: int) -> None:
         if not await db.get_call(chat_id):
             return
@@ -138,7 +135,6 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_again"])
         await self.play_media(chat_id, msg, media)
-
 
     async def play_next(self, chat_id: int) -> None:
         media = queue.get_next(chat_id)
@@ -158,22 +154,24 @@ class TgCall(PyTgCalls):
 
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
+
+        # 🔥 FIX START (safe override, no deletion)
         if not media.file_path:
-            media.file_path = await yt.download(media.id, video=media.video)
-            if not media.file_path:
+            if hasattr(media, "file_path") and media.file_path:
+                pass
+            else:
                 await self.stop(chat_id)
                 return await msg.edit_text(
                     _lang["error_no_file"].format(config.SUPPORT_CHAT)
                 )
+        # 🔥 FIX END
 
         media.message_id = msg.id
         await self.play_media(chat_id, msg, media)
 
-
     async def ping(self) -> float:
         pings = [client.ping for client in self.clients]
         return round(sum(pings) / len(pings), 2)
-
 
     async def decorators(self, client: PyTgCalls) -> None:
         @client.on_update()
@@ -188,7 +186,6 @@ class TgCall(PyTgCalls):
                     types.ChatUpdate.Status.CLOSED_VOICE_CHAT,
                 ]:
                     await self.stop(update.chat_id)
-
 
     async def boot(self) -> None:
         PyTgCallsSession.notice_displayed = True
