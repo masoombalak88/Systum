@@ -39,8 +39,9 @@ class YouTube:
                 return None
 
             data = results[0]
+            print(data)
             return Track(
-                id=data.get("id"),
+                id=self._extract_id(data.get("audioUrl") or data.get("videoUrl") or ""),
                 channel_name=data.get("channelName"),
                 duration=data.get("duration"),
                 duration_sec=utils.to_seconds(data.get("duration")),
