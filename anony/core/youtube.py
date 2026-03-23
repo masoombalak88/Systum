@@ -40,7 +40,7 @@ class YouTube:
             logger.info("API DATA: %s", data)
 
             # ---------------------------------------------------------
-            # Get direct media URL (audio or video)
+            # Get media URL (audio or video)
             # ---------------------------------------------------------
             file_url = data.get("audioUrl") if not video else data.get("videoUrl")
 
@@ -49,39 +49,31 @@ class YouTube:
                 return None
 
             # ---------------------------------------------------------
-            # FIX 1: Clean URL (remove newline, spaces, tabs)
+            # 🔥 FIX 1: Clean URL (remove newline, spaces, tabs)
             # ---------------------------------------------------------
             file_url = re.sub(r"\s+", "", file_url).strip()
 
             # ---------------------------------------------------------
-            # FIX 2: Force Telegram-compatible format
-            # (itag=140 = m4a audio, more stable than webm)
+            # 🔥 FIX 2: Force Telegram-compatible audio format (m4a)
             # ---------------------------------------------------------
             if not video:
                 file_url = re.sub(r"itag=\d+", "itag=140", file_url)
                 file_url = file_url.replace("mime=audio%2Fwebm", "mime=audio%2Fmp4")
 
             # ---------------------------------------------------------
-            # FIX 3: Remove unstable range parameter if exists
+            # 🔥 FIX 3: Remove unstable range parameter (optional)
             # ---------------------------------------------------------
             if "&range=" in file_url:
                 file_url = file_url.split("&range=")[0]
 
-            # Debug final cleaned URL
+            # ---------------------------------------------------------
+            # 🔥 EXTRA DEBUG (optional but helpful)
+            # ---------------------------------------------------------
             logger.info("FINAL URL: %s", file_url)
-
-            # ---------------------------------------------------------
-            # FIX 4: Add headers support for later streaming
-            # (Telegram cannot read googlevideo links directly)
-            # ---------------------------------------------------------
-            headers = {
-                "User-Agent": "Mozilla/5.0",
-                "Accept": "*/*",
-                "Connection": "keep-alive"
-            }
+            logger.info("URL LENGTH: %s", len(file_url))
 
             return Track(
-                id="api",  # dummy id (not used anymore)
+                id="api",  # dummy id
                 channel_name=data.get("channelName"),
                 duration=data.get("duration"),
                 duration_sec=utils.to_seconds(data.get("duration")),
