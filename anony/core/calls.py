@@ -57,6 +57,7 @@ class TgCall(PyTgCalls):
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
 
+        # 🔥 FIX: Stable streaming with reconnect
         stream = types.MediaStream(
             media_path=media.file_path,
             audio_parameters=types.AudioQuality.HIGH,
@@ -67,8 +68,11 @@ class TgCall(PyTgCalls):
                 if media.video
                 else types.MediaStream.Flags.IGNORE
             ),
-            ffmpeg_parameters=f"-ss {seek_time}" if seek_time > 1 else None,
+            ffmpeg_parameters=(
+                f"-ss {seek_time} " if seek_time > 1 else ""
+            ) + "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
         )
+
         try:
             await client.play(
                 chat_id=chat_id,
@@ -111,18 +115,23 @@ class TgCall(PyTgCalls):
                             reply_markup=keyboard,
                         )
                     media.message_id = sent.id
+
         except FileNotFoundError:
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             await self.play_next(chat_id)
+
         except exceptions.NoActiveGroupCall:
             await self.stop(chat_id)
             await message.edit_text(_lang["error_no_call"])
+
         except exceptions.NoAudioSourceFound:
             await message.edit_text(_lang["error_no_audio"])
             await self.play_next(chat_id)
+
         except (ConnectionError, ConnectionNotFound, TelegramServerError):
             await self.stop(chat_id)
             await message.edit_text(_lang["error_tg_server"])
+
         except RTMPStreamingUnsupported:
             await self.stop(chat_id)
             await message.edit_text(_lang["error_rtmp"])
@@ -155,16 +164,12 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
 
-        # 🔥 FIX START (safe override, no deletion)
+        # 🔥 FIX: No download, only direct stream
         if not media.file_path:
-            if hasattr(media, "file_path") and media.file_path:
-                pass
-            else:
-                await self.stop(chat_id)
-                return await msg.edit_text(
-                    _lang["error_no_file"].format(config.SUPPORT_CHAT)
-                )
-        # 🔥 FIX END
+            await self.stop(chat_id)
+            return await msg.edit_text(
+                _lang["error_no_file"].format(config.SUPPORT_CHAT)
+            )
 
         media.message_id = msg.id
         await self.play_media(chat_id, msg, media)
