@@ -54,24 +54,31 @@ class YouTube:
             file_url = re.sub(r"\s+", "", file_url).strip()
 
             # ---------------------------------------------------------
-            # FIX 2: Force Telegram-compatible audio format (m4a)
-            # Telegram does not reliably support webm streams
+            # FIX 2: Force Telegram-compatible format
+            # (itag=140 = m4a audio, more stable than webm)
             # ---------------------------------------------------------
             if not video:
-                # Force itag=140 (m4a audio)
                 file_url = re.sub(r"itag=\d+", "itag=140", file_url)
-
-                # Replace webm mime with mp4 audio mime
                 file_url = file_url.replace("mime=audio%2Fwebm", "mime=audio%2Fmp4")
 
             # ---------------------------------------------------------
-            # Optional FIX 3: Remove unnecessary range params (stability)
+            # FIX 3: Remove unstable range parameter if exists
             # ---------------------------------------------------------
             if "&range=" in file_url:
                 file_url = file_url.split("&range=")[0]
 
-            # Debug final URL
+            # Debug final cleaned URL
             logger.info("FINAL URL: %s", file_url)
+
+            # ---------------------------------------------------------
+            # FIX 4: Add headers support for later streaming
+            # (Telegram cannot read googlevideo links directly)
+            # ---------------------------------------------------------
+            headers = {
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "*/*",
+                "Connection": "keep-alive"
+            }
 
             return Track(
                 id="api",  # dummy id (not used anymore)
