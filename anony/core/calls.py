@@ -47,6 +47,7 @@ class TgCall(PyTgCalls):
     ) -> None:
         client = await db.get_assistant(chat_id)
         _lang = await lang.get_lang(chat_id)
+
         _thumb = (
             await thumb.generate(media)
             if isinstance(media, Track)
@@ -57,7 +58,7 @@ class TgCall(PyTgCalls):
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
 
-        # 🔥 FIX: Stable streaming with reconnect
+        # 🔥 FINAL FIX: stable + audio forced + reconnect
         stream = types.MediaStream(
             media_path=media.file_path,
             audio_parameters=types.AudioQuality.HIGH,
@@ -69,8 +70,10 @@ class TgCall(PyTgCalls):
                 else types.MediaStream.Flags.IGNORE
             ),
             ffmpeg_parameters=(
-                f"-ss {seek_time} " if seek_time > 1 else ""
-            ) + "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
+                (f"-ss {seek_time} " if seek_time > 1 else "")
+                + "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 "
+                "-vn -loglevel error"
+            ),
         )
 
         try:
@@ -79,16 +82,20 @@ class TgCall(PyTgCalls):
                 stream=stream,
                 config=types.GroupCallConfig(auto_start=False),
             )
+
             if not seek_time:
                 media.time = 1
                 await db.add_call(chat_id)
+
                 text = _lang["play_media"].format(
                     media.url,
                     media.title,
                     media.duration,
                     media.user,
                 )
+
                 keyboard = buttons.controls(chat_id)
+
                 try:
                     if _thumb:
                         await message.edit_media(
@@ -100,6 +107,7 @@ class TgCall(PyTgCalls):
                         )
                     else:
                         await message.edit_text(text, reply_markup=keyboard)
+
                 except (ChatSendMediaForbidden, ChatSendPhotosForbidden, MessageIdInvalid):
                     if _thumb:
                         sent = await app.send_photo(
@@ -147,8 +155,9 @@ class TgCall(PyTgCalls):
 
     async def play_next(self, chat_id: int) -> None:
         media = queue.get_next(chat_id)
+
         try:
-            if media.message_id:
+            if media and media.message_id:
                 await app.delete_messages(
                     chat_id=chat_id,
                     message_ids=media.message_id,
@@ -164,7 +173,7 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
 
-        # 🔥 FIX: No download, only direct stream
+        # 🔥 SAFE: no download system
         if not media.file_path:
             await self.stop(chat_id)
             return await msg.edit_text(
@@ -184,6 +193,7 @@ class TgCall(PyTgCalls):
             if isinstance(update, types.StreamEnded):
                 if update.stream_type == types.StreamEnded.Type.AUDIO:
                     await self.play_next(update.chat_id)
+
             elif isinstance(update, types.ChatUpdate):
                 if update.status in [
                     types.ChatUpdate.Status.KICKED,
@@ -194,9 +204,11 @@ class TgCall(PyTgCalls):
 
     async def boot(self) -> None:
         PyTgCallsSession.notice_displayed = True
+
         for ub in userbot.clients:
             client = PyTgCalls(ub, cache_duration=100)
             await client.start()
             self.clients.append(client)
             await self.decorators(client)
+
         logger.info("PyTgCalls client(s) started.")
