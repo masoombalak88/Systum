@@ -1,8 +1,8 @@
-# Copyright (c) 2025 AnonymousX1025
-# Licensed under the MIT License.
+
 
 import re
-import aiohttp
+import asyncio
+import requests
 
 from anony import logger
 from anony.helpers import Track, utils
@@ -18,19 +18,25 @@ class YouTube:
             r"(youtube\.com/(watch\?v=|shorts/|playlist\?list=)|youtu\.be/)"
             r"([A-Za-z0-9_-]{11}|PL[A-Za-z0-9_-]+)([&?][^\s]*)?"
         )
+        self._session = requests.Session()
 
     def valid(self, url: str) -> bool:
         return bool(re.match(self.regex, url))
 
+    def _fetch_search(self, query: str) -> list:
+        """Blocking HTTP call — runs in a thread executor."""
+        resp = self._session.get(
+            f"{API_BASE}/YouTube",
+            params={"query": query, "limit": 1},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     async def search(self, query: str, m_id: int, video: bool = False) -> Track | None:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{API_BASE}/YouTube",
-                    params={"query": query, "limit": 1},
-                ) as resp:
-                    resp.raise_for_status()
-                    results = await resp.json()
+            loop = asyncio.get_event_loop()
+            results = await loop.run_in_executor(None, self._fetch_search, query)
 
             if not results or not isinstance(results, list):
                 logger.error("Empty or invalid API response: %s", results)
@@ -73,19 +79,28 @@ class YouTube:
             logger.info("URL LENGTH: %s", len(file_url))
 
             return Track(
-                id="api",  # dummy id
+                id="api",
                 channel_name=data.get("channelName"),
                 duration=data.get("duration"),
                 duration_sec=utils.to_seconds(data.get("duration")),
                 message_id=m_id,
                 title=(data.get("title") or "")[:50],
                 thumbnail=data.get("thumbnail"),
-                url=self.base,  # optional
-                file_path=file_url,  # direct stream URL
+                url=self.base,
+                file_path=file_url,
                 view_count=None,
                 video=video,
             )
 
+        except requests.exceptions.HTTPError as ex:
+            logger.warning("HTTP error during search: %s", ex)
+            return None
+        except requests.exceptions.ConnectionError as ex:
+            logger.warning("Connection error during search: %s", ex)
+            return None
+        except requests.exceptions.Timeout:
+            logger.warning("Search request timed out for query: %s", query)
+            return None
         except Exception as ex:
             logger.warning("Search failed: %s", ex)
             return None
@@ -95,7 +110,6 @@ class YouTube:
         return []
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
-        # Not needed anymore (kept for compatibility)
         return None
 
     # ------------------------------------------------------------------
