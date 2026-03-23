@@ -5,6 +5,7 @@
 
 import re
 import aiohttp
+from pathlib import Path
 
 from py_yt import Playlist
 
@@ -55,19 +56,29 @@ class YouTube:
             logger.warning("YouTube API /YouTube failed: %s", ex)
         return None
 
+    async def _download_stream(self, stream_url: str, filepath: str) -> str | None:
+        """Download a remote stream URL to a local file. Returns filepath on success."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(stream_url) as resp:
+                    resp.raise_for_status()
+                    with open(filepath, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(1024 * 64):
+                            f.write(chunk)
+            return filepath
+        except Exception as ex:
+            logger.warning("Stream download failed: %s", ex)
+            Path(filepath).unlink(missing_ok=True)
+            return None
+
     def _extract_video_id(self, url: str) -> str | None:
         """Extract the 11-char video ID from a YouTube URL."""
         match = re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", url)
         return match.group(1) if match else None
 
     async def search(self, query: str, m_id: int, video: bool = False) -> Track | None:
-        """
-        Search by keyword or resolve a YouTube URL.
-        Returns a Track with audioUrl/videoUrl stored in file_path so
-        pytgcalls can stream it directly without a local download.
-        """
+        """Search by keyword or resolve a YouTube URL. Returns a Track (no download yet)."""
         if self.valid(query):
-            # It's a direct YouTube URL
             data = await self._fetch_by_url(query)
             video_id = self._extract_video_id(query)
         else:
@@ -76,8 +87,6 @@ class YouTube:
 
         if not data:
             return None
-
-        stream_url = data.get("videoUrl") if video else data.get("audioUrl")
 
         return Track(
             id=video_id or "",
@@ -90,11 +99,10 @@ class YouTube:
             url=self.base + video_id if video_id else query,
             view_count="",
             video=video,
-            file_path=stream_url,   # stream directly — no local download needed
         )
 
     async def playlist(self, limit: int, user: str, url: str, video: bool) -> list[Track | None]:
-        """Fetch YouTube playlist metadata via py_yt, stream URLs resolved lazily via download()."""
+        """Fetch YouTube playlist metadata via py_yt."""
         tracks = []
         try:
             plist = await Playlist.get(url)
@@ -119,14 +127,25 @@ class YouTube:
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
         """
-        Resolve a stream URL for the given video ID using the /Url endpoint.
-        Returns the direct audioUrl (or videoUrl) so pytgcalls can stream it
-        without writing anything to disk.
+        Resolve stream URL via the API, then download it to a local file.
+        Returns the local file path for pytgcalls to use.
         """
+        ext = "mp4" if video else "webm"
+        filepath = f"downloads/{video_id}.{ext}"
+
+        if Path(filepath).exists():
+            return filepath
+
         url = self.base + video_id
         data = await self._fetch_by_url(url)
         if not data:
-            logger.warning("Could not resolve stream URL for video_id: %s", video_id)
+            logger.warning("Could not resolve stream info for video_id: %s", video_id)
             return None
-        return data.get("videoUrl") if video else data.get("audioUrl")
+
+        stream_url = data.get("videoUrl") if video else data.get("audioUrl")
+        if not stream_url:
+            logger.warning("No stream URL in API response for video_id: %s", video_id)
+            return None
+
+        return await self._download_stream(stream_url, filepath)
 
