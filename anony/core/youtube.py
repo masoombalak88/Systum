@@ -46,6 +46,14 @@ class YouTube:
                 logger.error("No media URL found in API response: %s", data)
                 return None
 
+            # =========================================================
+            # 🔥🔥 FIX: Clean broken URL (newline + spaces issue)
+            # =========================================================
+            file_url = re.sub(r"\s+", "", file_url).strip()
+
+            # Debug (optional)
+            logger.info("CLEAN URL: %s", file_url)
+
             return Track(
                 id="api",  # dummy id (not used anymore)
                 channel_name=data.get("channelName"),
