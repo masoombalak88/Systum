@@ -39,20 +39,39 @@ class YouTube:
             data = results[0]
             logger.info("API DATA: %s", data)
 
-            # 🔥 Direct URL (no download API needed)
+            # ---------------------------------------------------------
+            # Get direct media URL (audio or video)
+            # ---------------------------------------------------------
             file_url = data.get("audioUrl") if not video else data.get("videoUrl")
 
             if not file_url:
                 logger.error("No media URL found in API response: %s", data)
                 return None
 
-            # =========================================================
-            # 🔥🔥 FIX: Clean broken URL (newline + spaces issue)
-            # =========================================================
+            # ---------------------------------------------------------
+            # FIX 1: Clean URL (remove newline, spaces, tabs)
+            # ---------------------------------------------------------
             file_url = re.sub(r"\s+", "", file_url).strip()
 
-            # Debug (optional)
-            logger.info("CLEAN URL: %s", file_url)
+            # ---------------------------------------------------------
+            # FIX 2: Force Telegram-compatible audio format (m4a)
+            # Telegram does not reliably support webm streams
+            # ---------------------------------------------------------
+            if not video:
+                # Force itag=140 (m4a audio)
+                file_url = re.sub(r"itag=\d+", "itag=140", file_url)
+
+                # Replace webm mime with mp4 audio mime
+                file_url = file_url.replace("mime=audio%2Fwebm", "mime=audio%2Fmp4")
+
+            # ---------------------------------------------------------
+            # Optional FIX 3: Remove unnecessary range params (stability)
+            # ---------------------------------------------------------
+            if "&range=" in file_url:
+                file_url = file_url.split("&range=")[0]
+
+            # Debug final URL
+            logger.info("FINAL URL: %s", file_url)
 
             return Track(
                 id="api",  # dummy id (not used anymore)
@@ -63,7 +82,7 @@ class YouTube:
                 title=(data.get("title") or "")[:50],
                 thumbnail=data.get("thumbnail"),
                 url=self.base,  # optional
-                file_path=file_url,  # 🔥 DIRECT STREAM URL
+                file_path=file_url,  # direct stream URL
                 view_count=None,
                 video=video,
             )
@@ -77,7 +96,7 @@ class YouTube:
         return []
 
     async def download(self, video_id: str, video: bool = False) -> str | None:
-        # ❌ Not needed anymore (kept for compatibility)
+        # Not needed anymore (kept for compatibility)
         return None
 
     # ------------------------------------------------------------------
