@@ -10,6 +10,10 @@ from pyrogram.types import InputMediaPhoto, Message
 from pytgcalls import PyTgCalls, exceptions, types
 from pytgcalls.pytgcalls_session import PyTgCallsSession
 
+# 🔥 NEW IMPORTS (ADDED)
+import aiohttp
+import tempfile
+
 from anony import app, config, db, lang, logger, queue, userbot, yt
 from anony.helpers import Media, Track, buttons, thumb
 
@@ -58,7 +62,38 @@ class TgCall(PyTgCalls):
             await message.edit_text(_lang["error_no_file"].format(config.SUPPORT_CHAT))
             return await self.play_next(chat_id)
 
-        # 🔥 FINAL FIX: stable + audio forced + reconnect
+        # =========================================================
+        # 🔥 FIX: Convert URL → local file for pytgcalls
+        # =========================================================
+        if media.file_path.startswith("http"):
+            try:
+                headers = {
+                    "User-Agent": "Mozilla/5.0"
+                }
+
+                async with aiohttp.ClientSession(headers=headers) as session:
+                    async with session.get(media.file_path) as resp:
+                        if resp.status != 200:
+                            await message.edit_text("❌ Failed to fetch audio")
+                            return await self.play_next(chat_id)
+
+                        data = await resp.read()
+
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
+                temp_file.write(data)
+                temp_file.close()
+
+                media.file_path = temp_file.name
+
+                logger.info(f"Converted URL → file: {media.file_path}")
+
+            except Exception as e:
+                logger.error(f"Download failed: {e}")
+                await message.edit_text("❌ Audio fetch failed")
+                return await self.play_next(chat_id)
+
+        # =========================================================
+
         stream = types.MediaStream(
             media_path=media.file_path,
             audio_parameters=types.AudioQuality.HIGH,
@@ -173,7 +208,6 @@ class TgCall(PyTgCalls):
         _lang = await lang.get_lang(chat_id)
         msg = await app.send_message(chat_id=chat_id, text=_lang["play_next"])
 
-        # 🔥 SAFE: no download system
         if not media.file_path:
             await self.stop(chat_id)
             return await msg.edit_text(
