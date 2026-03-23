@@ -2,7 +2,6 @@
 # Licensed under the MIT License.
 # This file is part of AnonXMusic
 
-
 from pathlib import Path
 
 from pyrogram import filters, types
@@ -19,6 +18,7 @@ def playlist_to_queue(chat_id: int, tracks: list) -> str:
         text += f"<b>{pos}.</b> {track.title}\n"
     text = text[:1948] + "</blockquote>"
     return text
+
 
 @app.on_message(
     filters.command(["play", "playforce", "vplay", "vplayforce"])
@@ -115,17 +115,24 @@ async def play_hndlr(
                 )
             return
 
+    # 🔥 FIX START (no delete, only safe override)
     if not file.file_path:
         fname = f"downloads/{file.id}.{'mp4' if video else 'webm'}"
         if Path(fname).exists():
             file.file_path = fname
         else:
-            await sent.edit_text(m.lang["play_downloading"])
-            file.file_path = await yt.download(file.id, video=video)
+            # 👇 OLD download disabled (API already gives URL)
+            if hasattr(file, "file_path") and file.file_path:
+                pass
+            else:
+                return await sent.edit_text("❌ No playable media URL found.")
+    # 🔥 FIX END
 
     await anon.play_media(chat_id=m.chat.id, message=sent, media=file)
+
     if not tracks:
         return
+
     added = playlist_to_queue(m.chat.id, tracks)
     await app.send_message(
         chat_id=m.chat.id,
